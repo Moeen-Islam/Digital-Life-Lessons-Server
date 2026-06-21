@@ -1,0 +1,28 @@
+{
+  "name": "digital-life-lessons-server",
+  "version": "1.0.0",
+  "description": "Express + MongoDB API for Digital Life Lessons",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed": "node src/seed.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@better-auth/mongo-adapter": "latest",
+    "better-auth": "latest",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0",
+    "morgan": "^1.10.0",
+    "stripe": "^17.5.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
