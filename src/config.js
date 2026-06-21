@@ -1,0 +1,27 @@
+import dotenv from "dotenv";
+
+dotenv.config();
+
+export const env = {
+  port: Number(process.env.PORT || 5000),
+  nodeEnv: process.env.NODE_ENV || "development",
+  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  serverUrl: process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`,
+  mongoUri: process.env.MONGODB_URI,
+  dbName: process.env.DB_NAME || "digitalLifeLessons",
+  betterAuthSecret: process.env.BETTER_AUTH_SECRET,
+  betterAuthUrl: process.env.BETTER_AUTH_URL || process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`,
+  googleClientId: process.env.GOOGLE_CLIENT_ID,
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  adminEmail: process.env.ADMIN_EMAIL || "admin@digitallifelessons.com"
+};
+
+export function assertEnv() {
+  const required = ["mongoUri", "betterAuthSecret"];
+  const missing = required.filter((key) => !env[key]);
+  if (missing.length) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+}
