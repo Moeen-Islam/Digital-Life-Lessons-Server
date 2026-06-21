@@ -15,7 +15,8 @@ export const env = {
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-  adminEmail: process.env.ADMIN_EMAIL || "admin@digitallifelessons.com"
+  adminEmail: process.env.ADMIN_EMAIL || "admin@digitallifelessons.com",
+  adminPassword: process.env.ADMIN_PASSWORD || "Admin123"
 };
 
 export function assertEnv() {
