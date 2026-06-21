@@ -9,7 +9,7 @@ const categories = ["Personal Growth", "Career", "Relationships", "Mindset", "Mi
 const tones = ["Motivational", "Sad", "Realization", "Gratitude"];
 
 function calcReadingTime(text = "") {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const words = String(text).trim().split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.ceil(words / 220));
 }
 
@@ -50,6 +50,21 @@ function serializeLesson(lesson, extra = {}) {
   };
 }
 
+function buildSearchQuery(searchText) {
+  const text = String(searchText || "").trim();
+
+  if (!text) return {};
+
+  return {
+    $or: [
+      { title: { $regex: text, $options: "i" } },
+      { description: { $regex: text, $options: "i" } },
+      { category: { $regex: text, $options: "i" } },
+      { emotionalTone: { $regex: text, $options: "i" } }
+    ]
+  };
+}
+
 /* =========================
    Public lesson routes
 ========================= */
@@ -60,7 +75,10 @@ router.get("/public", optionalAuth, async (req, res) => {
   const page = Math.max(Number(req.query.page || 1), 1);
   const limit = Math.min(Math.max(Number(req.query.limit || 9), 1), 30);
 
-  const query = { visibility: "Public" };
+  const query = {
+    visibility: "Public",
+    ...buildSearchQuery(req.query.search)
+  };
 
   if (req.query.category) {
     query.category = req.query.category;
@@ -68,10 +86,6 @@ router.get("/public", optionalAuth, async (req, res) => {
 
   if (req.query.tone) {
     query.emotionalTone = req.query.tone;
-  }
-
-  if (req.query.search) {
-    query.$text = { $search: String(req.query.search) };
   }
 
   const sort =
@@ -86,6 +100,7 @@ router.get("/public", optionalAuth, async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit)
       .toArray(),
+
     lessons.countDocuments(query)
   ]);
 
@@ -113,10 +128,15 @@ router.get("/featured", optionalAuth, async (req, res) => {
 
   const list = await lessons
     .find(
-      { visibility: "Public", isFeatured: true },
-      { projection: publicLessonProjection() }
+      {
+        visibility: "Public",
+        isFeatured: true
+      },
+      {
+        projection: publicLessonProjection()
+      }
     )
-    .sort({ createdAt: -1 })
+    .sort({ updatedAt: -1, createdAt: -1 })
     .limit(6)
     .toArray();
 
@@ -138,7 +158,14 @@ router.get("/most-saved", async (_req, res) => {
   const lessons = await col("lessons");
 
   const list = await lessons
-    .find({ visibility: "Public" }, { projection: publicLessonProjection() })
+    .find(
+      {
+        visibility: "Public"
+      },
+      {
+        projection: publicLessonProjection()
+      }
+    )
     .sort({ favoritesCount: -1, createdAt: -1 })
     .limit(6)
     .toArray();
@@ -156,7 +183,11 @@ router.get("/top-contributors", async (_req, res) => {
 
   const contributors = await lessons
     .aggregate([
-      { $match: { createdAt: { $gte: since } } },
+      {
+        $match: {
+          createdAt: { $gte: since }
+        }
+      },
       {
         $group: {
           _id: "$creatorId",
@@ -165,8 +196,12 @@ router.get("/top-contributors", async (_req, res) => {
           total: { $sum: 1 }
         }
       },
-      { $sort: { total: -1 } },
-      { $limit: 6 }
+      {
+        $sort: { total: -1 }
+      },
+      {
+        $limit: 6
+      }
     ])
     .toArray();
 
@@ -201,7 +236,10 @@ router.get("/user/favorites", requireAuth, async (req, res) => {
 
   const ids = saved.map((f) => objectId(f.lessonId)).filter(Boolean);
 
-  const list = await lessons.find({ _id: { $in: ids } }).toArray();
+  const list = await lessons
+    .find({ _id: { $in: ids } })
+    .sort({ createdAt: -1 })
+    .toArray();
 
   res.json({
     lessons: list.map((lesson) => serializeLesson(lesson))
@@ -210,7 +248,7 @@ router.get("/user/favorites", requireAuth, async (req, res) => {
 
 /* =========================
    Admin routes
-   IMPORTANT: keep these before /:id
+   IMPORTANT: keep these before /:id routes
 ========================= */
 
 router.get("/admin/all", requireAuth, requireAdmin, async (req, res) => {
@@ -232,12 +270,14 @@ router.get("/admin/all", requireAuth, requireAdmin, async (req, res) => {
 
   const list = await lessons.find(filter).sort({ createdAt: -1 }).toArray();
 
-  const [publicCount, privateCount, flaggedCount, featuredCount] = await Promise.all([
-    lessons.countDocuments({ visibility: "Public" }),
-    lessons.countDocuments({ visibility: "Private" }),
-    lessons.countDocuments({ reportsCount: { $gt: 0 } }),
-    lessons.countDocuments({ isFeatured: true })
-  ]);
+  const [publicCount, privateCount, flaggedCount, featuredCount, reviewedCount] =
+    await Promise.all([
+      lessons.countDocuments({ visibility: "Public" }),
+      lessons.countDocuments({ visibility: "Private" }),
+      lessons.countDocuments({ reportsCount: { $gt: 0 } }),
+      lessons.countDocuments({ isFeatured: true }),
+      lessons.countDocuments({ isReviewed: true })
+    ]);
 
   res.json({
     lessons: list.map((lesson) => serializeLesson(lesson)),
@@ -245,7 +285,8 @@ router.get("/admin/all", requireAuth, requireAdmin, async (req, res) => {
       publicCount,
       privateCount,
       flaggedCount,
-      featuredCount
+      featuredCount,
+      reviewedCount
     }
   });
 });
@@ -270,7 +311,9 @@ router.get("/admin/reports", requireAuth, requireAdmin, async (_req, res) => {
           }
         }
       },
-      { $sort: { count: -1 } }
+      {
+        $sort: { count: -1 }
+      }
     ])
     .toArray();
 
@@ -278,16 +321,24 @@ router.get("/admin/reports", requireAuth, requireAdmin, async (_req, res) => {
 });
 
 router.delete("/admin/reports/:lessonId", requireAuth, requireAdmin, async (req, res) => {
-  await (await col("lessonsReports")).deleteMany({
+  const reports = await col("lessonsReports");
+  const lessons = await col("lessons");
+
+  await reports.deleteMany({
     lessonId: req.params.lessonId
   });
 
   const id = objectId(req.params.lessonId);
 
   if (id) {
-    await (await col("lessons")).updateOne(
+    await lessons.updateOne(
       { _id: id },
-      { $set: { reportsCount: 0 } }
+      {
+        $set: {
+          reportsCount: 0,
+          updatedAt: new Date()
+        }
+      }
     );
   }
 
@@ -357,6 +408,8 @@ router.post("/", requireAuth, async (req, res) => {
 
 router.get("/:id", requireAuth, async (req, res) => {
   const lessons = await col("lessons");
+  const commentsCol = await col("comments");
+
   const id = objectId(req.params.id);
 
   if (!id) {
@@ -376,13 +429,23 @@ router.get("/:id", requireAuth, async (req, res) => {
     !req.user.isPremium &&
     !ownerOrAdmin;
 
-  await lessons.updateOne({ _id: id }, { $inc: { views: 1 } });
+  await lessons.updateOne(
+    { _id: id },
+    {
+      $inc: { views: 1 }
+    }
+  );
 
-  const comments = await (await col("comments"))
+  const comments = await commentsCol
     .find({ lessonId: req.params.id })
     .sort({ createdAt: -1 })
     .limit(50)
     .toArray();
+
+  // ✅ New: count total lessons created by this author
+  const totalLessonsCreated = await lessons.countDocuments({
+    creatorId: lesson.creatorId
+  });
 
   let similar = [];
 
@@ -397,7 +460,9 @@ router.get("/:id", requireAuth, async (req, res) => {
             { emotionalTone: lesson.emotionalTone }
           ]
         },
-        { projection: publicLessonProjection() }
+        {
+          projection: publicLessonProjection()
+        }
       )
       .limit(6)
       .toArray();
@@ -407,7 +472,17 @@ router.get("/:id", requireAuth, async (req, res) => {
     lesson: serializeLesson(lesson, {
       locked,
       isLiked: lesson.likes?.includes(req.user.authId),
-      isOwner: ownerOrAdmin
+      isOwner: ownerOrAdmin,
+
+      // ✅ New fields for Author / Creator section
+      authorTotalLessons: totalLessonsCreated,
+      author: {
+        id: lesson.creatorId,
+        name: lesson.creatorName,
+        email: lesson.creatorEmail,
+        photo: lesson.creatorPhoto,
+        totalLessonsCreated
+      }
     }),
     comments: comments.map((c) => serializeLesson(c)),
     similar: similar.map((s) => serializeLesson(s))
@@ -503,7 +578,6 @@ router.patch("/:id/settings", requireAuth, async (req, res) => {
     if (req.body.isFeatured !== undefined) {
       patch.isFeatured = Boolean(req.body.isFeatured);
 
-      // Featured lessons must be public to appear on home page.
       if (patch.isFeatured) {
         patch.visibility = "Public";
       }
@@ -516,9 +590,12 @@ router.patch("/:id/settings", requireAuth, async (req, res) => {
 
   await lessons.updateOne({ _id: id }, { $set: patch });
 
+  const updatedLesson = await lessons.findOne({ _id: id });
+
   res.json({
     message: "Lesson settings updated",
-    patch
+    patch,
+    lesson: serializeLesson(updatedLesson)
   });
 });
 
@@ -528,6 +605,10 @@ router.patch("/:id/settings", requireAuth, async (req, res) => {
 
 router.delete("/:id", requireAuth, async (req, res) => {
   const lessons = await col("lessons");
+  const favorites = await col("favorites");
+  const comments = await col("comments");
+  const reports = await col("lessonsReports");
+
   const id = objectId(req.params.id);
 
   if (!id) {
@@ -548,9 +629,9 @@ router.delete("/:id", requireAuth, async (req, res) => {
 
   await Promise.all([
     lessons.deleteOne({ _id: id }),
-    (await col("favorites")).deleteMany({ lessonId: req.params.id }),
-    (await col("comments")).deleteMany({ lessonId: req.params.id }),
-    (await col("lessonsReports")).deleteMany({ lessonId: req.params.id })
+    favorites.deleteMany({ lessonId: req.params.id }),
+    comments.deleteMany({ lessonId: req.params.id }),
+    reports.deleteMany({ lessonId: req.params.id })
   ]);
 
   res.json({ message: "Lesson deleted" });
@@ -580,18 +661,23 @@ router.post("/:id/like", requireAuth, async (req, res) => {
     { _id: id },
     liked
       ? {
-          $pull: { likes: req.user.authId },
-          $inc: { likesCount: -1 }
-        }
+        $pull: { likes: req.user.authId },
+        $inc: { likesCount: -1 }
+      }
       : {
-          $addToSet: { likes: req.user.authId },
-          $inc: { likesCount: 1 }
-        }
+        $addToSet: { likes: req.user.authId },
+        $inc: { likesCount: 1 }
+      }
   );
 
   const updated = await lessons.findOne(
     { _id: id },
-    { projection: { likesCount: 1, likes: 1 } }
+    {
+      projection: {
+        likesCount: 1,
+        likes: 1
+      }
+    }
   );
 
   res.json({
@@ -603,6 +689,7 @@ router.post("/:id/like", requireAuth, async (req, res) => {
 router.post("/:id/favorite", requireAuth, async (req, res) => {
   const favorites = await col("favorites");
   const lessons = await col("lessons");
+
   const id = objectId(req.params.id);
 
   if (!id) {
@@ -622,7 +709,12 @@ router.post("/:id/favorite", requireAuth, async (req, res) => {
 
   if (existing) {
     await favorites.deleteOne({ _id: existing._id });
-    await lessons.updateOne({ _id: id }, { $inc: { favoritesCount: -1 } });
+    await lessons.updateOne(
+      { _id: id },
+      {
+        $inc: { favoritesCount: -1 }
+      }
+    );
 
     return res.json({
       saved: false,
@@ -636,7 +728,12 @@ router.post("/:id/favorite", requireAuth, async (req, res) => {
     savedAt: new Date()
   });
 
-  await lessons.updateOne({ _id: id }, { $inc: { favoritesCount: 1 } });
+  await lessons.updateOne(
+    { _id: id },
+    {
+      $inc: { favoritesCount: 1 }
+    }
+  );
 
   res.json({
     saved: true,
@@ -654,6 +751,8 @@ router.post("/:id/comments", requireAuth, async (req, res) => {
   }
 
   const lessons = await col("lessons");
+  const comments = await col("comments");
+
   const id = objectId(req.params.id);
 
   if (!id || !(await lessons.findOne({ _id: id }))) {
@@ -669,9 +768,14 @@ router.post("/:id/comments", requireAuth, async (req, res) => {
     createdAt: new Date()
   };
 
-  const result = await (await col("comments")).insertOne(comment);
+  const result = await comments.insertOne(comment);
 
-  await lessons.updateOne({ _id: id }, { $inc: { commentsCount: 1 } });
+  await lessons.updateOne(
+    { _id: id },
+    {
+      $inc: { commentsCount: 1 }
+    }
+  );
 
   res.status(201).json({
     message: "Comment posted",
@@ -682,6 +786,8 @@ router.post("/:id/comments", requireAuth, async (req, res) => {
 router.post("/:id/report", requireAuth, async (req, res) => {
   const reason = String(req.body.reason || "Other").trim();
   const lessons = await col("lessons");
+  const reports = await col("lessonsReports");
+
   const id = objectId(req.params.id);
 
   if (!id) {
@@ -694,7 +800,7 @@ router.post("/:id/report", requireAuth, async (req, res) => {
     return res.status(404).json({ message: "Lesson not found" });
   }
 
-  await (await col("lessonsReports")).updateOne(
+  await reports.updateOne(
     {
       lessonId: req.params.id,
       reporterUserId: req.user.authId
@@ -709,14 +815,24 @@ router.post("/:id/report", requireAuth, async (req, res) => {
         timestamp: new Date()
       }
     },
-    { upsert: true }
+    {
+      upsert: true
+    }
   );
 
-  const reportsCount = await (await col("lessonsReports")).countDocuments({
+  const reportsCount = await reports.countDocuments({
     lessonId: req.params.id
   });
 
-  await lessons.updateOne({ _id: id }, { $set: { reportsCount } });
+  await lessons.updateOne(
+    { _id: id },
+    {
+      $set: {
+        reportsCount,
+        updatedAt: new Date()
+      }
+    }
+  );
 
   res.json({ message: "Report submitted" });
 });
