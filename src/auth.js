@@ -18,7 +18,15 @@ export const auth = betterAuth({
   appName: "Digital Life Lessons",
   baseURL: env.betterAuthUrl,
   secret: env.betterAuthSecret,
-  trustedOrigins: [env.clientUrl, env.serverUrl].filter(Boolean),
+  trustedOrigins: [
+    env.clientUrl,
+    env.serverUrl,
+    ...(env.corsOrigins || []),
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "https://digital-life-lessons-moeen.vercel.app",
+    "https://digital-life-lessons-server-five.vercel.app"
+  ].filter(Boolean),
   database: mongodbAdapter(database, { client }),
 
   emailAndPassword: {
