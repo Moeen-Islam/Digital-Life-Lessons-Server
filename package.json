@@ -10,7 +10,7 @@
     "seed": "node src/seed.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "dependencies": {
     "@better-auth/mongo-adapter": "latest",
