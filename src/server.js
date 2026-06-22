@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import morgan from "morgan";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.js";
@@ -15,6 +14,10 @@ await connectDb();
 
 const app = express();
 
+function cleanOrigin(origin = "") {
+  return String(origin).trim().replace(/\/+$/, "");
+}
+
 const allowedOrigins = [
   env.clientUrl,
   env.serverUrl,
@@ -23,27 +26,50 @@ const allowedOrigins = [
   "http://localhost:5000",
   "https://digital-life-lessons-moeen.vercel.app",
   "https://digital-life-lessons-server-five.vercel.app"
-].filter(Boolean);
+]
+  .filter(Boolean)
+  .map(cleanOrigin);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow Postman/server-to-server/no-origin requests
-      if (!origin) {
-        return callback(null, true);
-      }
+/*
+  Manual CORS middleware.
+  This must stay before Better Auth and all API routes.
+*/
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const cleanReqOrigin = cleanOrigin(origin);
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+  if (!origin || allowedOrigins.includes(cleanReqOrigin)) {
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
-  })
-);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      req.headers["access-control-request-headers"] ||
+        "Content-Type, Authorization"
+    );
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+
+    return next();
+  }
+
+  if (req.method === "OPTIONS") {
+    return res.status(403).end();
+  }
+
+  return res.status(403).json({
+    message: `CORS blocked for origin: ${origin}`
+  });
+});
 
 app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
 
@@ -60,7 +86,11 @@ app.post(
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/health", (_req, res) =>
-  res.json({ ok: true, app: "Digital Life Lessons API" })
+  res.json({
+    ok: true,
+    app: "Digital Life Lessons API",
+    allowedOrigins
+  })
 );
 
 app.use("/api/users", userRoutes);

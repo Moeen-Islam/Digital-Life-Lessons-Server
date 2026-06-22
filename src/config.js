@@ -10,9 +10,9 @@ export const env = {
   serverUrl: process.env.SERVER_URL || "http://localhost:5000",
   betterAuthUrl: process.env.BETTER_AUTH_URL || "http://localhost:5000",
 
- corsOrigins: process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
-  : [],
+  corsOrigins: process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
+    : [],
 
   mongoUri: process.env.MONGODB_URI,
   dbName: process.env.DB_NAME || "digitalLifeLessons",
